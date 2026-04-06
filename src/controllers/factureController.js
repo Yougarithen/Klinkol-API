@@ -62,25 +62,6 @@ exports.changerStatut = async (req, res) => {
 
             const { statut: statutActuel, type_facture } = factureCheck.rows[0];
 
-            // Validation des transitions de statut pour BON_COMMANDE
-            if (type_facture === 'BON_COMMANDE') {
-                const transitionsValides = {
-                    'Brouillon': ['En attente', 'Annulé'],
-                    'En attente': ['En production', 'Annulé'],
-                    'En production': ['Livré', 'Annulé'],
-                    'Livré': [],
-                    'Annulé': []
-                };
-
-                if (!transitionsValides[statutActuel]?.includes(statut)) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({
-                        success: false,
-                        error: `Transition impossible: ${statutActuel} → ${statut}`
-                    });
-                }
-            }
-
             // Si passage à "Livré", déduire du stock
             if (statut === 'Livré' && type_facture === 'BON_COMMANDE') {
                 const lignesResult = await client.query(`
