@@ -62,42 +62,45 @@ exports.changerStatut = async (req, res) => {
 
             const { statut: statutActuel, type_facture } = factureCheck.rows[0];
 
-            // Si passage à "Livré", déduire du stock
-            if (statut === 'Livré' && type_facture === 'BON_COMMANDE') {
-                const lignesResult = await client.query(`
-                    SELECT id_produit, quantite 
-                    FROM lignefacture 
-                    WHERE id_facture = $1
-                `, [id]);
-
-                for (const ligne of lignesResult.rows) {
-                    // Vérifier le stock disponible
-                    const stockCheck = await client.query(`
-                        SELECT stock_actuel, nom 
-                        FROM produit 
-                        WHERE id_produit = $1
-                    `, [ligne.id_produit]);
-
-                    if (stockCheck.rows.length === 0) {
-                        throw new Error(`Produit ID ${ligne.id_produit} introuvable`);
-                    }
-
-                    const stockActuel = stockCheck.rows[0].stock_actuel;
-                    if (stockActuel < ligne.quantite) {
-                        throw new Error(
-                            `Stock insuffisant pour ${stockCheck.rows[0].nom}. ` +
-                            `Disponible: ${stockActuel}, Demandé: ${ligne.quantite}`
-                        );
-                    }
-
-                    // Déduire du stock
-                    await client.query(`
-                        UPDATE produit 
-                        SET stock_actuel = stock_actuel - $1 
-                        WHERE id_produit = $2
-                    `, [ligne.quantite, ligne.id_produit]);
-                }
-            }
+            // ============================================================
+            // DÉSACTIVÉ - Soustraction du stock lors du passage à "Livré"
+            // ============================================================
+            // if (statut === 'Livré' && type_facture === 'BON_COMMANDE') {
+            //     const lignesResult = await client.query(`
+            //         SELECT id_produit, quantite 
+            //         FROM lignefacture 
+            //         WHERE id_facture = $1
+            //     `, [id]);
+            //
+            //     for (const ligne of lignesResult.rows) {
+            //         // Vérifier le stock disponible
+            //         const stockCheck = await client.query(`
+            //             SELECT stock_actuel, nom 
+            //             FROM produit 
+            //             WHERE id_produit = $1
+            //         `, [ligne.id_produit]);
+            //
+            //         if (stockCheck.rows.length === 0) {
+            //             throw new Error(`Produit ID ${ligne.id_produit} introuvable`);
+            //         }
+            //
+            //         const stockActuel = stockCheck.rows[0].stock_actuel;
+            //         if (stockActuel < ligne.quantite) {
+            //             throw new Error(
+            //                 `Stock insuffisant pour ${stockCheck.rows[0].nom}. ` +
+            //                 `Disponible: ${stockActuel}, Demandé: ${ligne.quantite}`
+            //             );
+            //         }
+            //
+            //         // Déduire du stock
+            //         await client.query(`
+            //             UPDATE produit 
+            //             SET stock_actuel = stock_actuel - $1 
+            //             WHERE id_produit = $2
+            //         `, [ligne.quantite, ligne.id_produit]);
+            //     }
+            // }
+            // ============================================================
 
             // Mettre à jour le statut
             await client.query(`
