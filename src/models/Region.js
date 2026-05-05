@@ -2,7 +2,7 @@
 const pool = require('../database/connection');
 
 class Region {
-    
+
     /**
      * Récupérer toutes les régions
      */
@@ -19,20 +19,22 @@ class Region {
                 f.numero_facture,
                 f.date_facture,
                 f.statut,
+                f.type_facture,
+                f.id_client,
                 c.nom as client,
                 COALESCE(SUM(lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100)), 0) as montant_ttc
             FROM Region r
             INNER JOIN Facture f ON r.id_bon_livraison = f.id_facture
             LEFT JOIN Client c ON f.id_client = c.id_client
             LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-            WHERE f.type_facture = 'BON_LIVRAISON'
-            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, c.nom
+            WHERE f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
+            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, f.type_facture, f.id_client, c.nom
             ORDER BY r.date_creation DESC
         `);
-        
+
         return result.rows;
     }
-    
+
     /**
      * Récupérer une région par son ID
      */
@@ -49,6 +51,7 @@ class Region {
                 f.numero_facture,
                 f.date_facture,
                 f.statut,
+                f.type_facture,
                 f.id_client,
                 c.nom as client,
                 COALESCE(SUM(lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100)), 0) as montant_ttc
@@ -56,13 +59,13 @@ class Region {
             INNER JOIN Facture f ON r.id_bon_livraison = f.id_facture
             LEFT JOIN Client c ON f.id_client = c.id_client
             LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-            WHERE r.id_region = $1 AND f.type_facture = 'BON_LIVRAISON'
-            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, f.id_client, c.nom
+            WHERE r.id_region = $1 AND f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
+            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, f.type_facture, f.id_client, c.nom
         `, [id]);
-        
+
         return result.rows[0] || null;
     }
-    
+
     /**
      * Récupérer une région par ID de bon de livraison
      */
@@ -79,45 +82,46 @@ class Region {
             FROM Region r
             WHERE r.id_bon_livraison = $1
         `, [idBonLivraison]);
-        
+
         return result.rows[0] || null;
     }
-    
+
     /**
      * Créer une nouvelle région pour un bon de livraison
      */
     static async create(data) {
         const client = await pool.connect();
-        
+
         try {
             await client.query('BEGIN');
-            
-            // Vérifier que c'est bien un bon de livraison
+
+            // Vérifier que la facture existe et est d'un type autorisé
             const bonCheck = await client.query(`
                 SELECT id_facture, type_facture 
                 FROM Facture 
                 WHERE id_facture = $1
             `, [data.id_bon_livraison]);
-            
+
             if (bonCheck.rows.length === 0) {
-                throw new Error('Bon de livraison introuvable');
+                throw new Error('Facture introuvable');
             }
-            
-            if (bonCheck.rows[0].type_facture !== 'BON_LIVRAISON') {
-                throw new Error('La facture doit être de type BON_LIVRAISON');
+
+            const typesAutorises = ['BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE'];
+            if (!typesAutorises.includes(bonCheck.rows[0].type_facture)) {
+                throw new Error(`Type de facture non autorisé. Types acceptés : ${typesAutorises.join(', ')}`);
             }
-            
+
             // Vérifier si une région existe déjà pour ce BL
             const regionExistante = await client.query(`
                 SELECT id_region 
                 FROM Region 
                 WHERE id_bon_livraison = $1
             `, [data.id_bon_livraison]);
-            
+
             if (regionExistante.rows.length > 0) {
                 throw new Error('Une région est déjà assignée à ce bon de livraison');
             }
-            
+
             // Insérer la région
             const result = await client.query(`
                 INSERT INTO Region (id_bon_livraison, nom_region, nom_chauffeur, frais_transport)
@@ -129,10 +133,10 @@ class Region {
                 data.nom_chauffeur || null,
                 data.frais_transport || 0
             ]);
-            
+
             await client.query('COMMIT');
             return result.rows[0];
-            
+
         } catch (error) {
             await client.query('ROLLBACK');
             throw error;
@@ -140,7 +144,7 @@ class Region {
             client.release();
         }
     }
-    
+
     /**
      * Mettre à jour une région
      */
@@ -158,14 +162,14 @@ class Region {
             data.frais_transport || 0,
             id
         ]);
-        
+
         if (result.rows.length === 0) {
             throw new Error('Région introuvable');
         }
-        
+
         return result.rows[0];
     }
-    
+
     /**
      * Supprimer une région
      */
@@ -175,14 +179,14 @@ class Region {
             WHERE id_region = $1
             RETURNING *
         `, [id]);
-        
+
         if (result.rows.length === 0) {
             throw new Error('Région introuvable');
         }
-        
+
         return result.rows[0];
     }
-    
+
     /**
      * Récupérer toutes les régions par nom de région
      */
@@ -205,14 +209,14 @@ class Region {
             INNER JOIN Facture f ON r.id_bon_livraison = f.id_facture
             LEFT JOIN Client c ON f.id_client = c.id_client
             LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-            WHERE r.nom_region = $1 AND f.type_facture = 'BON_LIVRAISON'
-            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, c.nom
+            WHERE r.nom_region = $1 AND f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
+            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, f.type_facture, c.nom
             ORDER BY r.date_creation DESC
         `, [nomRegion]);
-        
+
         return result.rows;
     }
-    
+
     /**
      * Récupérer toutes les régions par chauffeur
      */
@@ -235,14 +239,14 @@ class Region {
             INNER JOIN Facture f ON r.id_bon_livraison = f.id_facture
             LEFT JOIN Client c ON f.id_client = c.id_client
             LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-            WHERE r.nom_chauffeur = $1 AND f.type_facture = 'BON_LIVRAISON'
-            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, c.nom
+            WHERE r.nom_chauffeur = $1 AND f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
+            GROUP BY r.id_region, f.numero_facture, f.date_facture, f.statut, f.type_facture, c.nom
             ORDER BY r.date_creation DESC
         `, [nomChauffeur]);
-        
+
         return result.rows;
     }
-    
+
     /**
      * Statistiques par région
      */
@@ -260,14 +264,14 @@ class Region {
                 ), 0) as montant_total_ttc
             FROM Region r
             INNER JOIN Facture f ON r.id_bon_livraison = f.id_facture
-            WHERE f.type_facture = 'BON_LIVRAISON'
+            WHERE f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
             GROUP BY r.nom_region
             ORDER BY nombre_livraisons DESC
         `);
-        
+
         return result.rows;
     }
-    
+
     /**
      * Bons de livraison sans région assignée
      */
@@ -278,18 +282,19 @@ class Region {
                 f.numero_facture,
                 f.date_facture,
                 f.statut,
+                f.type_facture,
                 f.id_client,
                 c.nom as client,
                 COALESCE(SUM(lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100)), 0) as montant_ttc
             FROM Facture f
             LEFT JOIN Client c ON f.id_client = c.id_client
             LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-            WHERE f.type_facture = 'BON_LIVRAISON'
+            WHERE f.type_facture IN ('BON_LIVRAISON', 'BON_RESTITUTION', 'NON_CONFORMITE')
                 AND f.id_facture NOT IN (SELECT id_bon_livraison FROM Region)
-            GROUP BY f.id_facture, c.nom
+            GROUP BY f.id_facture, f.type_facture, c.nom
             ORDER BY f.date_facture DESC
         `);
-        
+
         return result.rows;
     }
 }
