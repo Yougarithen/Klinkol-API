@@ -21,7 +21,7 @@ const inventaireProduitRoutes = require('./inventaireProduitRoutes');
 const ravitaillementRoutes = require('./ravitaillementRoutes');
 
 const regionRoutes = require('./regionRoutes');
-const transporteurRoutes = require('./routes/transporteurRoutes');
+const transporteurRoutes = require('./transporteurRoutes');
 // ...
 
 // Importer les routes d'authentification et de sécurité
