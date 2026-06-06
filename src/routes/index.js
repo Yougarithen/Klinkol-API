@@ -21,6 +21,8 @@ const inventaireProduitRoutes = require('./inventaireProduitRoutes');
 const ravitaillementRoutes = require('./ravitaillementRoutes');
 
 const regionRoutes = require('./regionRoutes');
+const transporteurRoutes = require('./routes/transporteurRoutes');
+// ...
 
 // Importer les routes d'authentification et de sécurité
 const authRoutes = require('./authRoutes');
@@ -90,6 +92,8 @@ router.use('/inventaire-produits', inventaireProduitRoutes);
 
 // Ravitaillements
 router.use('/ravitaillements', ravitaillementRoutes);
+
+router.use('/transporteurs', transporteurRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
