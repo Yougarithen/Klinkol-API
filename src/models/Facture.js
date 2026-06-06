@@ -20,13 +20,14 @@ class Facture {
         f.notes,
         f.auteur,
         f.ref_bl,
+        f.date_creation,
         COALESCE(SUM(lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100)), 0) as montant_ttc,
         COALESCE(SUM(lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100) / (1 + lf.taux_tva / 100)), 0) as montant_ht,
         COALESCE(SUM((lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100)) - (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne / 100) / (1 + lf.taux_tva / 100))), 0) as montant_tva
       FROM Facture f
       LEFT JOIN Client c ON f.id_client = c.id_client
       LEFT JOIN LigneFacture lf ON f.id_facture = lf.id_facture
-      GROUP BY f.id_facture, c.nom, f.type_facture, f.conditions_paiement, f.notes, f.auteur, f.ref_bl
+      GROUP BY f.id_facture, c.nom, f.type_facture, f.conditions_paiement, f.notes, f.auteur, f.ref_bl, f.date_creation
       ORDER BY f.date_facture DESC
     `);
 
