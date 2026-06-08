@@ -22,6 +22,7 @@ const ravitaillementRoutes = require('./ravitaillementRoutes');
 
 const regionRoutes = require('./regionRoutes');
 const transporteurRoutes = require('./transporteurRoutes');
+const ajustementRoutes = require('./ajustementRoutes');
 // ...
 
 // Importer les routes d'authentification et de sécurité
@@ -97,7 +98,7 @@ router.use('/transporteurs', transporteurRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
-
+router.use('/ajustement', ajustementRoutes);
 router.get('/', (req, res) => {
   res.json({ 
     message: '🚀 API ERP Gestion de Stock - Sécurisée',
