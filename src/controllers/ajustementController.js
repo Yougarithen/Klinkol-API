@@ -2,7 +2,7 @@
 const Ajustement = require('../models/Ajustement');
 
 // Types autorisés pour la validation
-const TYPES_VALIDES = ['remise', 'compensation', 'avoir', 'escompte', 'autre'];
+const TYPES_VALIDES = ['remise', 'compensation', 'paiement_transport', 'credit'];
 
 exports.getAll = async (req, res) => {
     try {
