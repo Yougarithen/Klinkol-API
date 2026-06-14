@@ -1,9 +1,5 @@
-// Model pour les ajustements (remises, compensations, avoirs, escomptes...) - PostgreSQL
+// Model pour les rectifications (remises, compensations, avoirs, escomptes...) - PostgreSQL
 const pool = require('../database/connection');
-
-// ⚠️  PostgreSQL convertit les noms non quotés en minuscules.
-//     On utilise des guillemets doubles partout pour cibler exactement
-//     la bonne table "ajustement" (et non "ajustementstock" ou autre).
 
 class Ajustement {
 
@@ -12,7 +8,7 @@ class Ajustement {
             SELECT  a.*,
                     f.numero_facture,
                     c.nom AS client
-            FROM    "ajustement" a
+            FROM    "rectification" a
             LEFT JOIN "facture" f ON a.id_facture = f.id_facture
             LEFT JOIN "client"  c ON a.id_client  = c.id_client
             ORDER BY a.date_ajustement DESC
@@ -22,7 +18,7 @@ class Ajustement {
 
     static async getById(id) {
         const result = await pool.query(
-            'SELECT * FROM "ajustement" WHERE id_ajustement = $1',
+            'SELECT * FROM "rectification" WHERE id_ajustement = $1',
             [id]
         );
         return result.rows[0];
@@ -30,7 +26,7 @@ class Ajustement {
 
     static async getByFacture(id_facture) {
         const result = await pool.query(
-            'SELECT * FROM "ajustement" WHERE id_facture = $1 ORDER BY date_ajustement DESC',
+            'SELECT * FROM "rectification" WHERE id_facture = $1 ORDER BY date_ajustement DESC',
             [id_facture]
         );
         return result.rows;
@@ -41,7 +37,7 @@ class Ajustement {
             SELECT  a.*,
                     f.numero_facture,
                     c.nom AS client
-            FROM    "ajustement" a
+            FROM    "rectification" a
             LEFT JOIN "facture" f ON a.id_facture = f.id_facture
             LEFT JOIN "client"  c ON (a.id_client = c.id_client OR f.id_client = c.id_client)
             WHERE   a.id_client = $1 OR f.id_client = $1
@@ -52,7 +48,7 @@ class Ajustement {
 
     static async create(data) {
         const result = await pool.query(`
-            INSERT INTO "ajustement" (
+            INSERT INTO "rectification" (
                 id_facture, id_client, type_ajustement, montant, date_ajustement,
                 motif, reference, responsable, commentaire
             )
@@ -74,7 +70,7 @@ class Ajustement {
 
     static async delete(id) {
         const result = await pool.query(
-            'DELETE FROM "ajustement" WHERE id_ajustement = $1',
+            'DELETE FROM "rectification" WHERE id_ajustement = $1',
             [id]
         );
         return result.rowCount;
