@@ -61,9 +61,11 @@ class Ravitaillement {
                 'quantite',
                 'prix_achat',
                 'fournisseur',
+                'id_fournisseur',
                 'numero_bon_livraison',
                 'commentaire',
-                'responsable'
+                'responsable',
+                'id_transporteur'
             ];
 
             const values = [
@@ -71,9 +73,11 @@ class Ravitaillement {
                 data.quantite,
                 data.prix_achat || null,
                 data.fournisseur || null,
+                data.id_fournisseur || null,
                 data.numero_bon_livraison || null,
                 data.commentaire || null,
-                data.responsable
+                data.responsable,
+                data.id_transporteur || null
             ];
 
             // Si une date est fournie, l'ajouter aux champs

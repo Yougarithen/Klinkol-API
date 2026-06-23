@@ -55,7 +55,7 @@ exports.getByPeriode = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const { id_matiere, quantite, prix_achat, fournisseur, numero_bon_livraison, commentaire, responsable, date_ravitaillement, id_transporteur } = req.body;
+        const { id_matiere, quantite, prix_achat, fournisseur, id_fournisseur, numero_bon_livraison, commentaire, responsable, date_ravitaillement, id_transporteur } = req.body;
 
         // Validation
         if (!id_matiere || !quantite || !responsable) {
@@ -77,6 +77,7 @@ exports.create = async (req, res) => {
             quantite,
             prix_achat,
             fournisseur,
+            id_fournisseur,
             numero_bon_livraison,
             commentaire,
             responsable,
