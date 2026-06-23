@@ -23,7 +23,7 @@ const regionRoutes = require('./regionRoutes');
 const transporteurRoutes = require('./transporteurRoutes');
 const ajustementRoutes = require('./ajustementRoutes');
 const transporteurBLRoutes = require('./transporteurBLRoutes');
-
+const transporteurRavitaillementRoutes = require('./transporteurRavitaillementRoutes');
 // Importer les routes d'authentification et de sécurité
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
@@ -61,6 +61,7 @@ router.use('/inventaire-produits', inventaireProduitRoutes);
 router.use('/ravitaillements', ravitaillementRoutes);
 router.use('/transporteurs', transporteurRoutes);
 router.use('/transporteur-bl', transporteurBLRoutes);
+router.use('/transporteur-ravitaillement', transporteurRavitaillementRoutes);
 // ✅ Ajustements financiers (remises, avoirs, compensations...)
 router.use('/ajustements', ajustementRoutes);
 
