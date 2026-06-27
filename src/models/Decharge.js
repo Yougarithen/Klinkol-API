@@ -5,54 +5,38 @@ class Decharge {
 
     static async getAll() {
         const result = await pool.query(`
-      SELECT 
-        d.*,
-        t.nom AS nom_transporteur,
-        c.nom AS nom_fournisseur
-      FROM Decharge d
-      LEFT JOIN Transporteur t ON d.id_transporteur = t.id_transporteur
-      LEFT JOIN Client      c ON d.id_client       = c.id_client
-      ORDER BY d.date_decharge DESC
+      SELECT *
+      FROM Vue_Decharges
+      ORDER BY date_decharge DESC
     `);
         return result.rows;
     }
 
     static async getById(id) {
         const result = await pool.query(`
-      SELECT 
-        d.*,
-        t.nom AS nom_transporteur,
-        c.nom AS nom_fournisseur
-      FROM Decharge d
-      LEFT JOIN Transporteur t ON d.id_transporteur = t.id_transporteur
-      LEFT JOIN Client      c ON d.id_client       = c.id_client
-      WHERE d.id_decharge = $1
+      SELECT *
+      FROM Vue_Decharges
+      WHERE id_decharge = $1
     `, [id]);
         return result.rows[0];
     }
 
     static async getByTransporteur(id_transporteur) {
         const result = await pool.query(`
-      SELECT 
-        d.*,
-        t.nom AS nom_transporteur
-      FROM Decharge d
-      LEFT JOIN Transporteur t ON d.id_transporteur = t.id_transporteur
-      WHERE d.id_transporteur = $1
-      ORDER BY d.date_decharge DESC
+      SELECT *
+      FROM Vue_Decharges
+      WHERE id_transporteur = $1
+      ORDER BY date_decharge DESC
     `, [id_transporteur]);
         return result.rows;
     }
 
     static async getByClient(id_client) {
         const result = await pool.query(`
-      SELECT 
-        d.*,
-        c.nom AS nom_fournisseur
-      FROM Decharge d
-      LEFT JOIN Client c ON d.id_client = c.id_client
-      WHERE d.id_client = $1
-      ORDER BY d.date_decharge DESC
+      SELECT *
+      FROM Vue_Decharges
+      WHERE id_client = $1
+      ORDER BY date_decharge DESC
     `, [id_client]);
         return result.rows;
     }
@@ -81,16 +65,21 @@ class Decharge {
       RETURNING *
     `, [
             data.id_transporteur || null,
-            data.id_client       || null,
+            data.id_client || null,
             data.montant,
-            data.date_decharge   || new Date().toISOString(),
-            data.mode_paiement   || null,
-            data.reference       || null,
-            data.responsable     || null,
-            data.commentaire     || null,
+            data.date_decharge || new Date().toISOString(),
+            data.mode_paiement || null,
+            data.reference || null,
+            data.responsable || null,
+            data.commentaire || null,
         ]);
 
-        return result.rows[0];
+        // On retourne la ligne enrichie depuis la vue
+        const enrichi = await pool.query(`
+      SELECT * FROM Vue_Decharges WHERE id_decharge = $1
+    `, [result.rows[0].id_decharge]);
+
+        return enrichi.rows[0];
     }
 
     static async delete(id) {
