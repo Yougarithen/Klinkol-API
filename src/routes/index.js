@@ -67,7 +67,7 @@ router.use('/ajustements', ajustementRoutes);
 
 // ✅ Ajustements de stock sur une route distincte
 router.use('/ajustements-stock', ajustementStockRoutes);
-router.use('/decharge', dechargeRoutes);
+router.use('/decharges', dechargeRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
