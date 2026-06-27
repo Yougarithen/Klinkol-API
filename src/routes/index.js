@@ -28,7 +28,7 @@ const transporteurRavitaillementRoutes = require('./transporteurRavitaillementRo
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
 const securityRoutes = require('./securityRoutes');
-
+const dechargeRoutes = require('./dechargeRoutes');
 // ============================================================
 // ROUTES PUBLIQUES (authentification)
 // ============================================================
@@ -67,7 +67,7 @@ router.use('/ajustements', ajustementRoutes);
 
 // ✅ Ajustements de stock sur une route distincte
 router.use('/ajustements-stock', ajustementStockRoutes);
-
+router.use('/decharge', dechargeRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
