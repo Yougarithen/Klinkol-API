@@ -1,134 +1,103 @@
-// ========== models/LigneFacture.js - PostgreSQL avec prix_ttc ==========
-const pool = require('../database/connection');
+// Controller lignes facture - PostgreSQL LL
+const LigneFacture = require('../models/LigneFacture');
 
-class LigneFacture {
-
-    static async getAll() {
-        const result = await pool.query(`
-      SELECT lf.*, 
-             f.numero_facture,
-             p.nom as produit_nom,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) as montant_ttc,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100)) as montant_ht,
-             ((lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) - (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100))) as montant_tva
-      FROM LigneFacture lf
-      JOIN Facture f ON lf.id_facture = f.id_facture
-      JOIN Produit p ON lf.id_produit = p.id_produit
-      ORDER BY f.date_facture DESC, lf.id_ligne
-    `);
-        return result.rows;
-    }
-
-    static async getById(id) {
-        const result = await pool.query(`
-      SELECT lf.*, 
-             f.numero_facture, f.statut as facture_statut,
-             p.nom as produit_nom, p.code_produit,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) as montant_ttc,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100)) as montant_ht,
-             ((lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) - (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100))) as montant_tva
-      FROM LigneFacture lf
-      JOIN Facture f ON lf.id_facture = f.id_facture
-      JOIN Produit p ON lf.id_produit = p.id_produit
-      WHERE lf.id_ligne = $1
-    `, [id]);
-        return result.rows[0];
-    }
-
-    static async getByFacture(id_facture) {
-        const result = await pool.query(`
-      SELECT lf.*, 
-             p.nom as produit_nom, p.code_produit, p.stock_actuel,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) as montant_ttc,
-             (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100)) as montant_ht,
-             ((lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100)) - (lf.quantite * lf.prix_ttc * (1 - lf.remise_ligne/100) / (1 + lf.taux_tva/100))) as montant_tva
-      FROM LigneFacture lf
-      JOIN Produit p ON lf.id_produit = p.id_produit
-      WHERE lf.id_facture = $1
-      ORDER BY lf.id_ligne
-    `, [id_facture]);
-        return result.rows;
-    }
-
-    static async create(data) {
-        const result = await pool.query(`
-      INSERT INTO LigneFacture (id_facture, id_produit, quantite, unite_vente, prix_unitaire_ht, prix_ttc, taux_tva, remise_ligne, description)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      RETURNING *
-    `, [
-            data.id_facture,
-            data.id_produit,
-            data.quantite,
-            data.unite_vente,
-            data.prix_unitaire_ht,
-            data.prix_ttc, // Nouvelle colonne
-            data.taux_tva,
-            data.remise_ligne || 0,
-            data.description || null
-        ]);
-
-        return this.getById(result.rows[0].id_ligne);
-    }
-
-    static async update(id, data) {
-        const result = await pool.query(`
-      UPDATE LigneFacture 
-      SET id_produit = $1, quantite = $2, prix_unitaire_ht = $3, 
-          prix_ttc = $4, taux_tva = $5, remise_ligne = $6, description = $7,
-          unite_vente = $8
-      WHERE id_ligne = $9
-      RETURNING *
-    `, [
-            data.id_produit,
-            data.quantite,
-            data.prix_unitaire_ht,
-            data.prix_ttc, // Nouvelle colonne
-            data.taux_tva,
-            data.remise_ligne,
-            data.description,
-            data.unite_vente,
-            id
-        ]);
-
-        return this.getById(id);
-    }
-
-    static async delete(id) {
-        const result = await pool.query('DELETE FROM LigneFacture WHERE id_ligne = $1', [id]);
-        return result.rowCount;
-    }
-
-    static async calculerTotaux(id) {
-        const ligne = await this.getById(id);
-        if (!ligne) return null;
-
-        return {
-            montant_ht: ligne.montant_ht,
-            montant_tva: ligne.montant_tva,
-            montant_ttc: ligne.montant_ttc
-        };
-    }
-
-    static async verifierStock(id_produit, quantite) {
-        const result = await pool.query('SELECT stock_actuel, nom FROM Produit WHERE id_produit = $1', [id_produit]);
-        const produit = result.rows[0];
-
-        if (!produit) {
-            throw new Error('Produit introuvable');
-        }
-
-        if (produit.stock_actuel < quantite) {
-            return {
-                disponible: false,
-                message: `Stock insuffisant pour ${produit.nom}. Disponible: ${produit.stock_actuel}, Demandé: ${quantite}`
-            };
-        }
-
-        return {
-            disponible: true,
-            stock_actuel: produit.stock_actuel
-        };
+// Envoie une réponse JSON de façon sûre : si l'objet contient quoi que ce soit
+// de non sérialisable (ex: une erreur pg brute avec une référence de socket),
+// on retombe sur un message texte simple au lieu de faire planter la requête.
+function safeJson(res, status, payload) {
+    try {
+        res.status(status).json(payload);
+    } catch (e) {
+        res.status(status).json({
+            success: false,
+            error: typeof payload?.error === 'string' ? payload.error : 'Erreur serveur (réponse non sérialisable)',
+        });
     }
 }
 
-module.exports = LigneFacture;
+function safeErrorMessage(error) {
+    if (!error) return 'Erreur inconnue';
+    if (typeof error.message === 'string') return error.message;
+    try {
+        return String(error);
+    } catch {
+        return 'Erreur inconnue';
+    }
+}
+
+exports.getAll = async (req, res) => {
+    try {
+        const lignes = await LigneFacture.getAll();
+        safeJson(res, 200, { success: true, data: lignes });
+    } catch (error) {
+        safeJson(res, 500, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.getById = async (req, res) => {
+    try {
+        const ligne = await LigneFacture.getById(req.params.id);
+        if (!ligne) {
+            return safeJson(res, 404, { success: false, error: 'Ligne non trouvée' });
+        }
+        safeJson(res, 200, { success: true, data: ligne });
+    } catch (error) {
+        safeJson(res, 500, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.getByFacture = async (req, res) => {
+    try {
+        const lignes = await LigneFacture.getByFacture(req.params.id_facture);
+        safeJson(res, 200, { success: true, data: lignes });
+    } catch (error) {
+        safeJson(res, 500, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.create = async (req, res) => {
+    try {
+        const ligne = await LigneFacture.create(req.body);
+        safeJson(res, 201, { success: true, data: ligne });
+    } catch (error) {
+        safeJson(res, 400, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.update = async (req, res) => {
+    try {
+        const ligne = await LigneFacture.update(req.params.id, req.body);
+        safeJson(res, 200, { success: true, data: ligne });
+    } catch (error) {
+        console.error('Erreur update ligne facture:', safeErrorMessage(error));
+        safeJson(res, 400, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.delete = async (req, res) => {
+    try {
+        await LigneFacture.delete(req.params.id);
+        safeJson(res, 200, { success: true, message: 'Ligne supprimée' });
+    } catch (error) {
+        safeJson(res, 400, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.calculerTotaux = async (req, res) => {
+    try {
+        const totaux = await LigneFacture.calculerTotaux(req.params.id);
+        safeJson(res, 200, { success: true, data: totaux });
+    } catch (error) {
+        safeJson(res, 500, { success: false, error: safeErrorMessage(error) });
+    }
+};
+
+exports.verifierStock = async (req, res) => {
+    try {
+        const { id_produit, quantite } = req.body;
+        const verification = await LigneFacture.verifierStock(id_produit, quantite);
+        safeJson(res, 200, { success: true, data: verification });
+    } catch (error) {
+        safeJson(res, 400, { success: false, error: safeErrorMessage(error) });
+    }
+};
