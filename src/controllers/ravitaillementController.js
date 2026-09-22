@@ -96,6 +96,41 @@ exports.create = async (req, res) => {
     }
 };
 
+exports.update = async (req, res) => {
+    try {
+        const { id_matiere, quantite, prix_achat, fournisseur, id_fournisseur, numero_bon_livraison, commentaire, responsable, date_ravitaillement, id_transporteur } = req.body;
+
+        if (quantite !== undefined && quantite <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'La quantité doit être supérieure à 0'
+            });
+        }
+
+        const ravitaillement = await Ravitaillement.update(req.params.id, {
+            id_matiere,
+            quantite,
+            prix_achat,
+            fournisseur,
+            id_fournisseur,
+            numero_bon_livraison,
+            commentaire,
+            responsable,
+            date_ravitaillement,
+            id_transporteur
+        });
+
+        res.json({
+            success: true,
+            data: ravitaillement,
+            message: 'Ravitaillement modifié avec succès'
+        });
+    } catch (error) {
+        console.error('Erreur update ravitaillement:', error);
+        res.status(400).json({ success: false, error: error.message });
+    }
+};
+
 exports.delete = async (req, res) => {
     try {
         const result = await Ravitaillement.delete(req.params.id);

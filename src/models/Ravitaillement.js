@@ -150,6 +150,147 @@ class Ravitaillement {
         }
     }
 
+    static async update(id, data) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // Récupérer le ravitaillement existant
+            const existingResult = await client.query(
+                'SELECT * FROM Ravitaillement WHERE id_ravitaillement = $1',
+                [id]
+            );
+
+            if (existingResult.rows.length === 0) {
+                throw new Error('Ravitaillement introuvable');
+            }
+
+            const existing = existingResult.rows[0];
+
+            const nouvelIdMatiere = data.id_matiere !== undefined ? data.id_matiere : existing.id_matiere;
+            const nouvelleQuantite = data.quantite !== undefined ? data.quantite : existing.quantite;
+
+            const matiereAChange = nouvelIdMatiere !== existing.id_matiere;
+            const quantiteAChange = parseFloat(nouvelleQuantite) !== parseFloat(existing.quantite);
+
+            // Si la matière ou la quantité change, réajuster les stocks concernés
+            if (matiereAChange || quantiteAChange) {
+
+                // 1. Retirer l'ancienne quantité de l'ancienne matière
+                const ancienneMatiereResult = await client.query(
+                    'SELECT id_matiere, stock_actuel FROM MatierePremiere WHERE id_matiere = $1',
+                    [existing.id_matiere]
+                );
+                if (ancienneMatiereResult.rows.length > 0) {
+                    const ancienneMatiere = ancienneMatiereResult.rows[0];
+                    const stockApresRetrait = parseFloat(ancienneMatiere.stock_actuel) - parseFloat(existing.quantite);
+                    await client.query(
+                        'UPDATE MatierePremiere SET stock_actuel = $1 WHERE id_matiere = $2',
+                        [stockApresRetrait, existing.id_matiere]
+                    );
+                }
+
+                // 2. Vérifier que la (nouvelle) matière existe et y ajouter la nouvelle quantité
+                const nouvelleMatiereResult = await client.query(
+                    'SELECT id_matiere, nom, stock_actuel FROM MatierePremiere WHERE id_matiere = $1',
+                    [nouvelIdMatiere]
+                );
+                if (nouvelleMatiereResult.rows.length === 0) {
+                    throw new Error('Matière première introuvable');
+                }
+                const nouvelleMatiere = nouvelleMatiereResult.rows[0];
+
+                // Si c'est la même matière, il faut repartir du stock déjà décrémenté ci-dessus
+                const stockDeBase = matiereAChange
+                    ? parseFloat(nouvelleMatiere.stock_actuel)
+                    : parseFloat(nouvelleMatiere.stock_actuel) - parseFloat(existing.quantite);
+
+                const stockApresAjout = stockDeBase + parseFloat(nouvelleQuantite);
+
+                await client.query(
+                    'UPDATE MatierePremiere SET stock_actuel = $1 WHERE id_matiere = $2',
+                    [stockApresAjout, nouvelIdMatiere]
+                );
+
+                // Historiser l'ajustement
+                await client.query(`
+          INSERT INTO AjustementStock (
+            type_article,
+            id_article,
+            type_ajustement,
+            quantite_avant,
+            quantite_ajustee,
+            quantite_apres,
+            responsable,
+            motif
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `, [
+                    'MATIERE',
+                    nouvelIdMatiere,
+                    'MODIFICATION',
+                    stockDeBase,
+                    nouvelleQuantite,
+                    stockApresAjout,
+                    data.responsable || existing.responsable,
+                    `Modification du ravitaillement #${id}`
+                ]);
+            }
+
+            // Construire dynamiquement la mise à jour des champs fournis
+            const champsAutorises = [
+                'id_matiere',
+                'quantite',
+                'prix_achat',
+                'fournisseur',
+                'id_fournisseur',
+                'numero_bon_livraison',
+                'commentaire',
+                'responsable',
+                'id_transporteur',
+                'date_ravitaillement'
+            ];
+
+            const sets = [];
+            const values = [];
+            let i = 1;
+
+            for (const champ of champsAutorises) {
+                if (data[champ] !== undefined) {
+                    sets.push(`${champ} = $${i}`);
+                    values.push(data[champ]);
+                    i++;
+                }
+            }
+
+            if (sets.length > 0) {
+                values.push(id);
+                await client.query(`
+          UPDATE Ravitaillement
+          SET ${sets.join(', ')}
+          WHERE id_ravitaillement = $${i}
+        `, values);
+            }
+
+            await client.query('COMMIT');
+
+            // Retourner les détails complets mis à jour
+            const result = await pool.query(`
+        SELECT * FROM Vue_Historique_Ravitaillement
+        WHERE id_ravitaillement = $1
+      `, [id]);
+
+            return result.rows[0];
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
     static async delete(id) {
         const client = await pool.connect();
 

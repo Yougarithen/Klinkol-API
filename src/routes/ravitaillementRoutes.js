@@ -30,6 +30,9 @@ router.get('/:id', requirePermission('matieres.read'), controller.getById);
 // POST - Créer un nouveau ravitaillement
 router.post('/', requirePermission('matieres.create'), controller.create);
 
+// PUT - Modifier un ravitaillement existant (réajuste le stock si besoin)
+router.put('/:id', requirePermission('matieres.update'), controller.update);
+
 // DELETE - Supprimer un ravitaillement (annule aussi le stock)
 router.delete('/:id', requirePermission('matieres.delete'), controller.delete);
 
