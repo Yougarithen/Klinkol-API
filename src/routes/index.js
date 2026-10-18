@@ -69,7 +69,8 @@ router.use('/ajustements', ajustementRoutes);
 // ✅ Ajustements de stock sur une route distincte
 router.use('/ajustements-stock', ajustementStockRoutes);
 router.use('/decharges', dechargeRoutes);
-router.use('/ajustementFTPMRoutes', ajustementFTPMRoutes);
+// ✅ Ajustements FTPM (clients de type Fournisseur / transporteurs), distincts des ajustements ci-dessus
+router.use('/ajustements-ftpm', ajustementFTPMRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
