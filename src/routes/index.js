@@ -24,6 +24,7 @@ const transporteurRoutes = require('./transporteurRoutes');
 const ajustementRoutes = require('./ajustementRoutes');
 const transporteurBLRoutes = require('./transporteurBLRoutes');
 const transporteurRavitaillementRoutes = require('./transporteurRavitaillementRoutes');
+const ajustementFTPMRoutes = require('./ajustementFTPMRoutes');
 // Importer les routes d'authentification et de sécurité
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
@@ -68,6 +69,7 @@ router.use('/ajustements', ajustementRoutes);
 // ✅ Ajustements de stock sur une route distincte
 router.use('/ajustements-stock', ajustementStockRoutes);
 router.use('/decharges', dechargeRoutes);
+router.use('/ajustementFTPMRoutes', ajustementFTPMRoutes);
 // ============================================================
 // ROUTE DE DOCUMENTATION
 // ============================================================
