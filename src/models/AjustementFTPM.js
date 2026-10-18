@@ -1,8 +1,9 @@
 // Model pour les ajustements FTPM - PostgreSQL
+// (distinct du module « Ajustement » : remise / compensation / paiement transport / crédit)
 const pool = require('../database/connection');
 
 const AJUSTEMENT_SELECT = `
-  a.id_ajustement,
+  a.id_ajustement_ftpm,
   a.id_client,
   a.id_transporteur,
   a.type,
@@ -21,7 +22,7 @@ const AJUSTEMENT_FROM = `
 
 class AjustementFTPM {
 
-    static TYPES = ['COMMISSION', 'PRESTATION', 'CREDIT', 'REMBOURSEMENT', 'AUTRE'];
+    static TYPES = ['REMBOURSEMENT', 'CREDIT', 'CREANCE_ANTERIEURE', 'PRESTATION_SERVICE'];
 
     // Filtres optionnels : { id_client, id_transporteur, type }
     static async getAll(filters = {}) {
@@ -46,7 +47,7 @@ class AjustementFTPM {
       SELECT ${AJUSTEMENT_SELECT}
       ${AJUSTEMENT_FROM}
       ${where}
-      ORDER BY a.date_creation DESC, a.id_ajustement DESC
+      ORDER BY a.date_creation DESC, a.id_ajustement_ftpm DESC
     `, params);
         return result.rows;
     }
@@ -55,7 +56,7 @@ class AjustementFTPM {
         const result = await pool.query(`
       SELECT ${AJUSTEMENT_SELECT}
       ${AJUSTEMENT_FROM}
-      WHERE a.id_ajustement = $1
+      WHERE a.id_ajustement_ftpm = $1
     `, [id]);
         return result.rows[0];
     }
@@ -68,11 +69,27 @@ class AjustementFTPM {
         return this.getAll({ id_transporteur: idTransporteur });
     }
 
+    // Un ajustement FTPM ne peut concerner qu'un client dont le TypeC est « Fournisseur »
+    static async estFournisseur(idClient) {
+        const result = await pool.query(`
+      SELECT 1 FROM Client
+      WHERE id_client = $1 AND LOWER(TRIM(typec)) = 'fournisseur'
+    `, [idClient]);
+        return result.rowCount > 0;
+    }
+
+    static async verifierCible(data) {
+        if (data.id_client && !(await this.estFournisseur(data.id_client))) {
+            throw new Error("Un ajustement FTPM ne peut concerner qu'un client de type Fournisseur");
+        }
+    }
+
     static async create(data) {
+        await this.verifierCible(data);
         const result = await pool.query(`
       INSERT INTO AjustementFTPM (id_client, id_transporteur, type, montant, motif)
       VALUES ($1, $2, $3, $4, $5)
-      RETURNING id_ajustement
+      RETURNING id_ajustement_ftpm
     `, [
             data.id_client || null,
             data.id_transporteur || null,
@@ -80,10 +97,11 @@ class AjustementFTPM {
             data.montant,
             data.motif || null,
         ]);
-        return this.getById(result.rows[0].id_ajustement);
+        return this.getById(result.rows[0].id_ajustement_ftpm);
     }
 
     static async update(id, data) {
+        await this.verifierCible(data);
         const result = await pool.query(`
       UPDATE AjustementFTPM
       SET id_client       = $1,
@@ -91,8 +109,8 @@ class AjustementFTPM {
           type            = $3,
           montant         = $4,
           motif           = $5
-      WHERE id_ajustement = $6
-      RETURNING id_ajustement
+      WHERE id_ajustement_ftpm = $6
+      RETURNING id_ajustement_ftpm
     `, [
             data.id_client || null,
             data.id_transporteur || null,
@@ -106,7 +124,7 @@ class AjustementFTPM {
     }
 
     static async delete(id) {
-        const result = await pool.query('DELETE FROM AjustementFTPM WHERE id_ajustement = $1', [id]);
+        const result = await pool.query('DELETE FROM AjustementFTPM WHERE id_ajustement_ftpm = $1', [id]);
         return result.rowCount;
     }
 

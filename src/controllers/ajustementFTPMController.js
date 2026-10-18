@@ -1,4 +1,5 @@
 // Controller pour les ajustements FTPM - PostgreSQL
+// (distinct du controller « ajustement » existant)
 const Ajustement = require('../models/AjustementFTPM');
 
 // Valide le body : exactement un des deux ids, type connu, montant > 0
