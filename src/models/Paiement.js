@@ -1,4 +1,4 @@
-// Model pour les paiements - PostgreSQL
+// Model pour les paiements - PostgreSQL avec auteur, date_creation et etat
 const pool = require('../database/connection');
 
 class Paiement {
@@ -26,8 +26,8 @@ class Paiement {
 
     static async create(data) {
         const result = await pool.query(`
-      INSERT INTO Paiement (id_facture, id_client, montant_paye, date_paiement, mode_paiement, reference, responsable, commentaire)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      INSERT INTO Paiement (id_facture, id_client, montant_paye, date_paiement, mode_paiement, reference, responsable, commentaire, auteur, etat)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
       RETURNING *
     `, [
             data.id_facture || null,
@@ -37,7 +37,11 @@ class Paiement {
             data.mode_paiement || null,
             data.reference || null,
             data.responsable || null,
-            data.commentaire || null
+            data.commentaire || null,
+            data.auteur || null,
+            // Texte libre (pas de valeurs figées) : la valeur par défaut est définie ici
+            data.etat || 'En instance de validation'
+            // date_creation : remplie automatiquement par la base (DEFAULT CURRENT_TIMESTAMP)
         ]);
 
         return result.rows[0];

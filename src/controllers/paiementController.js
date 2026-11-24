@@ -42,7 +42,13 @@ exports.getByClient = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const paiement = await Paiement.create(req.body);
+        // Ajouter le nom d'utilisateur connecté aux données (comme pour les factures)
+        const paiementData = {
+            ...req.body,
+            auteur: req.user.nom_utilisateur  // req.user vient du middleware authenticate
+        };
+
+        const paiement = await Paiement.create(paiementData);
         res.status(201).json({ success: true, data: paiement, message: 'Paiement enregistré' });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
