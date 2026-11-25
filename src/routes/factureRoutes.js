@@ -6,36 +6,36 @@ const { authenticate, requirePermission } = require('../middleware/authMiddlewar
 
 router.use(authenticate);
 
-router.get('/', requirePermission('factures.read'), controller.getAll);
+// ============================================================
+// IMPORTANT : les routes FIXES doivent être déclarées AVANT les routes
+// avec paramètre (/:id), sinon Express interprète "historique", "credit"…
+// comme un id (erreur : invalid input syntax for type integer).
+// ============================================================
+
+// ---------- Routes fixes ----------
 router.get('/credit', requirePermission('factures.read'), controller.getFacturesCredit);
-router.get('/client/:id_client/bons-non-factures',
-    requirePermission('factures.read'),
-    controller.getBonsLivraisonNonFactures
-);
+router.get('/historique', requirePermission('factures.read'), controller.getHistoriqueGlobal);
+router.get('/client/:id_client/bons-non-factures', requirePermission('factures.read'), controller.getBonsLivraisonNonFactures);
+router.post('/depuis-bons', requirePermission('factures.create'), controller.creerFactureDepuisBons);
 
-router.post('/depuis-bons',
-    requirePermission('factures.create'),
-    controller.creerFactureDepuisBons
-);
-
-router.get('/:id/bons-livraison',
-    requirePermission('factures.read'),
-    controller.getBonsLivraisonDeFacture
-);
-router.get('/:id', requirePermission('factures.read'), controller.getById);
+// ---------- Liste / création ----------
+router.get('/', requirePermission('factures.read'), controller.getAll);
 router.post('/', requirePermission('factures.create'), controller.create);
+
+// ---------- Routes avec :id ----------
+router.get('/:id', requirePermission('factures.read'), controller.getById);
 router.put('/:id', requirePermission('factures.update'), controller.update);
-
-// ⭐ NOUVELLE ROUTE - Changer le statut d'une facture/bon de commande
-router.put('/:id/statut', requirePermission('factures.update'), controller.changerStatut);
-
 router.delete('/:id', requirePermission('factures.delete'), controller.delete);
-router.post('/:id/lignes', requirePermission('factures.update'), controller.ajouterLigne);
 
-// Routes pour gérer les lignes individuelles
+router.get('/:id/historique', requirePermission('factures.read'), controller.getHistorique);
+router.get('/:id/bons-livraison', requirePermission('factures.read'), controller.getBonsLivraisonDeFacture);
+
+router.put('/:id/statut', requirePermission('factures.update'), controller.changerStatut);
+router.post('/:id/valider', requirePermission('factures.update'), controller.valider);
+
+// ---------- Lignes ----------
+router.post('/:id/lignes', requirePermission('factures.update'), controller.ajouterLigne);
 router.put('/:id/lignes/:id_ligne', requirePermission('factures.update'), controller.updateLigne);
 router.delete('/:id/lignes/:id_ligne', requirePermission('factures.update'), controller.deleteLigne);
-
-router.post('/:id/valider', requirePermission('factures.validate'), controller.valider);
 
 module.exports = router;
