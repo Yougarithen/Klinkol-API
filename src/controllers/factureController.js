@@ -1,6 +1,7 @@
 // Controller pour les factures - PostgreSQL avec auteur
 const Facture = require('../models/Facture');
 const pool = require('../database/connection');
+const Historique = require('../utils/historiqueFacture');
 exports.getAll = async (req, res) => {
     try {
         const factures = await Facture.getAll();
@@ -49,7 +50,7 @@ exports.changerStatut = async (req, res) => {
 
             // Récupérer la facture actuelle
             const factureCheck = await client.query(`
-                SELECT statut, type_facture FROM facture WHERE id_facture = $1
+                SELECT id_facture, numero_facture, statut, type_facture FROM facture WHERE id_facture = $1
             `, [id]);
 
             if (factureCheck.rows.length === 0) {
@@ -61,6 +62,7 @@ exports.changerStatut = async (req, res) => {
             }
 
             const { statut: statutActuel, type_facture } = factureCheck.rows[0];
+            const auteur = req.user?.nom_utilisateur || null;
 
             // ============================================================
             // DÉSACTIVÉ - Soustraction du stock lors du passage à "Livré"
@@ -109,6 +111,11 @@ exports.changerStatut = async (req, res) => {
                 WHERE id_facture = $2
             `, [statut, id]);
 
+            // 📝 Historique
+            if (statutActuel !== statut) {
+                await Historique.logStatut(client, factureCheck.rows[0], statutActuel, statut, auteur);
+            }
+
             await client.query('COMMIT');
 
             // Récupérer la facture mise à jour
@@ -140,34 +147,60 @@ exports.updateLigne = async (req, res) => {
         const { id, id_ligne } = req.params;
         const { id_produit, quantite, prix_unitaire_ht, prix_ttc, taux_tva, remise_ligne, description, unite_vente } = req.body;
 
-        const result = await pool.query(`
-            UPDATE lignefacture 
-            SET id_produit = $1, quantite = $2, prix_unitaire_ht = $3, 
-                prix_ttc = $4, taux_tva = $5, remise_ligne = $6, 
-                description = $7, unite_vente = $8
-            WHERE id_ligne = $9 AND id_facture = $10
-            RETURNING *
-        `, [
-            id_produit,
-            quantite,
-            prix_unitaire_ht,
-            prix_ttc,
-            taux_tva,
-            remise_ligne || 0,
-            description || null,
-            unite_vente || 'unité',
-            id_ligne,
-            id
-        ]);
+        const client = await pool.connect();
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({
-                success: false,
-                error: 'Ligne de facture introuvable'
-            });
+        try {
+            await client.query('BEGIN');
+
+            // État avant modification
+            const avantResult = await client.query(`
+                SELECT * FROM lignefacture
+                WHERE id_ligne = $1 AND id_facture = $2
+                FOR UPDATE
+            `, [id_ligne, id]);
+
+            if (avantResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    error: 'Ligne de facture introuvable'
+                });
+            }
+
+            const result = await client.query(`
+                UPDATE lignefacture 
+                SET id_produit = $1, quantite = $2, prix_unitaire_ht = $3, 
+                    prix_ttc = $4, taux_tva = $5, remise_ligne = $6, 
+                    description = $7, unite_vente = $8
+                WHERE id_ligne = $9 AND id_facture = $10
+                RETURNING *
+            `, [
+                id_produit,
+                quantite,
+                prix_unitaire_ht,
+                prix_ttc,
+                taux_tva,
+                remise_ligne || 0,
+                description || null,
+                unite_vente || 'unité',
+                id_ligne,
+                id
+            ]);
+
+            // 📝 Historique
+            await Historique.logLigneModifiee(
+                client, id, avantResult.rows[0], result.rows[0], req.user?.nom_utilisateur || null
+            );
+
+            await client.query('COMMIT');
+            res.json({ success: true, data: result.rows[0] });
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
         }
-
-        res.json({ success: true, data: result.rows[0] });
     } catch (error) {
         console.error('Erreur updateLigne:', error);
         res.status(500).json({
@@ -185,22 +218,47 @@ exports.deleteLigne = async (req, res) => {
     try {
         const { id, id_ligne } = req.params;
 
-        const result = await pool.query(`
-            DELETE FROM lignefacture 
-            WHERE id_ligne = $1 AND id_facture = $2
-        `, [id_ligne, id]);
+        const client = await pool.connect();
 
-        if (result.rowCount === 0) {
-            return res.status(404).json({
-                success: false,
-                error: 'Ligne de facture introuvable'
+        try {
+            await client.query('BEGIN');
+
+            // On lit la ligne avant de la supprimer pour pouvoir la décrire dans l'historique
+            const ligneResult = await client.query(`
+                SELECT * FROM lignefacture
+                WHERE id_ligne = $1 AND id_facture = $2
+            `, [id_ligne, id]);
+
+            if (ligneResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({
+                    success: false,
+                    error: 'Ligne de facture introuvable'
+                });
+            }
+
+            await client.query(`
+                DELETE FROM lignefacture 
+                WHERE id_ligne = $1 AND id_facture = $2
+            `, [id_ligne, id]);
+
+            // 📝 Historique
+            await Historique.logLigneSupprimee(
+                client, id, ligneResult.rows[0], req.user?.nom_utilisateur || null
+            );
+
+            await client.query('COMMIT');
+            res.json({
+                success: true,
+                message: 'Ligne supprimée avec succès'
             });
-        }
 
-        res.json({
-            success: true,
-            message: 'Ligne supprimée avec succès'
-        });
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     } catch (error) {
         console.error('Erreur deleteLigne:', error);
         res.status(500).json({
@@ -226,7 +284,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
     try {
-        const facture = await Facture.update(req.params.id, req.body);
+        const facture = await Facture.update(req.params.id, req.body, req.user?.nom_utilisateur || null);
         res.json({ success: true, data: facture });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
@@ -235,7 +293,7 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
     try {
-        await Facture.delete(req.params.id);
+        await Facture.delete(req.params.id, req.user?.nom_utilisateur || null);
         res.json({ success: true, message: 'Facture supprimée' });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
@@ -244,7 +302,7 @@ exports.delete = async (req, res) => {
 
 exports.ajouterLigne = async (req, res) => {
     try {
-        await Facture.ajouterLigne(req.params.id, req.body);
+        await Facture.ajouterLigne(req.params.id, req.body, req.user?.nom_utilisateur || null);
         const facture = await Facture.getById(req.params.id);
         res.json({ success: true, data: facture });
     } catch (error) {
@@ -254,7 +312,7 @@ exports.ajouterLigne = async (req, res) => {
 
 exports.valider = async (req, res) => {
     try {
-        const facture = await Facture.valider(req.params.id);
+        const facture = await Facture.valider(req.params.id, req.user?.nom_utilisateur || null);
         res.json({ success: true, data: facture, message: 'Facture validée' });
     } catch (error) {
         res.status(400).json({ success: false, error: error.message });
@@ -303,6 +361,48 @@ exports.getBonsLivraisonDeFacture = async (req, res) => {
     try {
         const bons = await Facture.getBonsLivraisonDeFacture(req.params.id);
         res.json({ success: true, data: bons });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+/**
+ * Historique des modifications d'une facture / d'un bon
+ * GET /factures/:id/historique
+ */
+exports.getHistorique = async (req, res) => {
+    try {
+        const historique = await Historique.getByFacture(req.params.id);
+        res.json({ success: true, data: historique });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+/**
+ * Historique global (tous les documents) avec filtres et pagination
+ * GET /factures/historique?q=&type=&action=&date_debut=&date_fin=&page=&limit=
+ * ⚠️ Cette route doit être déclarée AVANT router.get('/:id', ...)
+ */
+exports.getHistoriqueGlobal = async (req, res) => {
+    try {
+        const str = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined);
+        const isDate = (v) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+
+        const { rows, total } = await Historique.getAll({
+            q: str(req.query.q),
+            type: str(req.query.type),
+            action: str(req.query.action),
+            date_debut: isDate(req.query.date_debut) ? req.query.date_debut : undefined,
+            date_fin: isDate(req.query.date_fin) ? req.query.date_fin : undefined,
+            limit,
+            offset: (page - 1) * limit,
+        });
+
+        res.json({ success: true, data: rows, total, page, limit });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

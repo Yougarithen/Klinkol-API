@@ -57,7 +57,7 @@ exports.getByFacture = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const ligne = await LigneFacture.create(req.body);
+        const ligne = await LigneFacture.create(req.body, req.user?.nom_utilisateur || null);
         safeJson(res, 201, { success: true, data: ligne });
     } catch (error) {
         safeJson(res, 400, { success: false, error: safeErrorMessage(error) });
@@ -66,7 +66,7 @@ exports.create = async (req, res) => {
 
 exports.update = async (req, res) => {
     try {
-        const ligne = await LigneFacture.update(req.params.id, req.body);
+        const ligne = await LigneFacture.update(req.params.id, req.body, req.user?.nom_utilisateur || null);
         safeJson(res, 200, { success: true, data: ligne });
     } catch (error) {
         console.error('Erreur update ligne facture:', safeErrorMessage(error));
@@ -76,7 +76,7 @@ exports.update = async (req, res) => {
 
 exports.delete = async (req, res) => {
     try {
-        await LigneFacture.delete(req.params.id);
+        await LigneFacture.delete(req.params.id, req.user?.nom_utilisateur || null);
         safeJson(res, 200, { success: true, message: 'Ligne supprimée' });
     } catch (error) {
         safeJson(res, 400, { success: false, error: safeErrorMessage(error) });

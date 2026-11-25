@@ -1,5 +1,6 @@
 // ========== models/LigneFacture.js - PostgreSQL avec prix_ttc ==========
 const pool = require('../database/connection');
+const Historique = require('../utils/historiqueFacture');
 
 class LigneFacture {
 
@@ -50,28 +51,56 @@ class LigneFacture {
         return result.rows;
     }
 
-    static async create(data) {
-        const result = await pool.query(`
+    static async create(data, auteur = null) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
       INSERT INTO LigneFacture (id_facture, id_produit, quantite, unite_vente, prix_unitaire_ht, prix_ttc, taux_tva, remise_ligne, description)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
-            data.id_facture,
-            data.id_produit,
-            data.quantite,
-            data.unite_vente,
-            data.prix_unitaire_ht,
-            data.prix_ttc, // Nouvelle colonne
-            data.taux_tva,
-            data.remise_ligne || 0,
-            data.description || null
-        ]);
+                data.id_facture,
+                data.id_produit,
+                data.quantite,
+                data.unite_vente,
+                data.prix_unitaire_ht,
+                data.prix_ttc, // Nouvelle colonne
+                data.taux_tva,
+                data.remise_ligne || 0,
+                data.description || null
+            ]);
 
-        return this.getById(result.rows[0].id_ligne);
+            // 📝 Historique
+            await Historique.logLigneAjoutee(client, data.id_facture, result.rows[0], auteur);
+
+            await client.query('COMMIT');
+            return this.getById(result.rows[0].id_ligne);
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
-    static async update(id, data) {
-        const result = await pool.query(`
+    static async update(id, data, auteur = null) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            const avantResult = await client.query(
+                'SELECT * FROM LigneFacture WHERE id_ligne = $1 FOR UPDATE',
+                [id]
+            );
+            const avant = avantResult.rows[0];
+            if (!avant) throw new Error('Ligne introuvable');
+
+            const result = await client.query(`
       UPDATE LigneFacture 
       SET id_produit = $1, quantite = $2, prix_unitaire_ht = $3, 
           prix_ttc = $4, taux_tva = $5, remise_ligne = $6, description = $7,
@@ -79,23 +108,59 @@ class LigneFacture {
       WHERE id_ligne = $9
       RETURNING *
     `, [
-            data.id_produit,
-            data.quantite,
-            data.prix_unitaire_ht,
-            data.prix_ttc, // Nouvelle colonne
-            data.taux_tva,
-            data.remise_ligne || 0,
-            data.description || null,
-            data.unite_vente || 'unité',
-            id
-        ]);
+                data.id_produit,
+                data.quantite,
+                data.prix_unitaire_ht,
+                data.prix_ttc, // Nouvelle colonne
+                data.taux_tva,
+                data.remise_ligne || 0,
+                data.description || null,
+                data.unite_vente || 'unité',
+                id
+            ]);
 
-        return this.getById(id);
+            // 📝 Historique
+            await Historique.logLigneModifiee(client, avant.id_facture, avant, result.rows[0], auteur);
+
+            await client.query('COMMIT');
+            return this.getById(id);
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
-    static async delete(id) {
-        const result = await pool.query('DELETE FROM LigneFacture WHERE id_ligne = $1', [id]);
-        return result.rowCount;
+    static async delete(id, auteur = null) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            const ligneResult = await client.query('SELECT * FROM LigneFacture WHERE id_ligne = $1', [id]);
+            const ligne = ligneResult.rows[0];
+
+            if (!ligne) {
+                await client.query('ROLLBACK');
+                return 0;
+            }
+
+            const result = await client.query('DELETE FROM LigneFacture WHERE id_ligne = $1', [id]);
+
+            // 📝 Historique
+            await Historique.logLigneSupprimee(client, ligne.id_facture, ligne, auteur);
+
+            await client.query('COMMIT');
+            return result.rowCount;
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
     static async calculerTotaux(id) {

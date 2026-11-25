@@ -1,6 +1,7 @@
 // Model pour les factures - PostgreSQL VERSION avec prix_ttc, auteur et ref_bl
 const pool = require('../database/connection');
 const BonLivraisonFacture = require('./BonLivraisonFacture');
+const Historique = require('../utils/historiqueFacture');
 
 class Facture {
 
@@ -248,6 +249,10 @@ class Facture {
                 }
             }
 
+            // 📝 Historique
+            const nbLignes = Array.isArray(data.lignes) ? data.lignes.length : 0;
+            await Historique.logCreation(client, result.rows[0], data.auteur, `${nbLignes} ligne(s)`);
+
             await client.query('COMMIT');
             return this.getById(id_facture);
 
@@ -259,63 +264,131 @@ class Facture {
         }
     }
 
-    static async update(id, data) {
+    static async update(id, data, auteur = null) {
         // ⚠️ IMPORTANT: type_facture ne doit JAMAIS être modifié après création
         // On l'exclut explicitement de la requête UPDATE
-        const result = await pool.query(`
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // État avant modification (verrouillé pour éviter les écritures concurrentes)
+            const avantResult = await client.query(
+                'SELECT * FROM Facture WHERE id_facture = $1 FOR UPDATE',
+                [id]
+            );
+            const avant = avantResult.rows[0];
+            if (!avant) throw new Error('Facture introuvable');
+
+            const result = await client.query(`
       UPDATE Facture 
       SET id_client = $1, date_facture = $2, date_echeance = $3, statut = $4, 
           remise_globale = $5, conditions_paiement = $6, notes = $7, ref_bl = $8, date_modification = CURRENT_TIMESTAMP
       WHERE id_facture = $9
       RETURNING *
     `, [
-            data.id_client,
-            data.date_facture,
-            data.date_echeance,
-            data.statut,
-            data.remise_globale,
-            data.conditions_paiement,
-            data.notes,
-            data.ref_bl || null,
-            id
-        ]);
+                data.id_client,
+                data.date_facture,
+                data.date_echeance,
+                data.statut,
+                data.remise_globale,
+                data.conditions_paiement,
+                data.notes,
+                data.ref_bl || null,
+                id
+            ]);
 
-        return this.getById(id);
+            // 📝 Historique : compare avant / après
+            await Historique.logModification(client, { avant, apres: result.rows[0], auteur });
+
+            await client.query('COMMIT');
+            return this.getById(id);
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
-    static async delete(id) {
-        const result = await pool.query('DELETE FROM Facture WHERE id_facture = $1', [id]);
-        return result.rowCount;
+    static async delete(id, auteur = null) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            const factureResult = await client.query(
+                'SELECT id_facture, numero_facture, type_facture FROM Facture WHERE id_facture = $1',
+                [id]
+            );
+            const facture = factureResult.rows[0];
+
+            if (!facture) {
+                await client.query('ROLLBACK');
+                return 0;
+            }
+
+            const result = await client.query('DELETE FROM Facture WHERE id_facture = $1', [id]);
+
+            // 📝 Historique (conservé même après suppression : pas de FK)
+            await Historique.logSuppression(client, facture, auteur);
+
+            await client.query('COMMIT');
+            return result.rowCount;
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
-    static async ajouterLigne(id_facture, data) {
-        const result = await pool.query(`
+    static async ajouterLigne(id_facture, data, auteur = null) {
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            const result = await client.query(`
       INSERT INTO LigneFacture (id_facture, id_produit, quantite, unite_vente, prix_unitaire_ht, prix_ttc, taux_tva, remise_ligne, description)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       RETURNING *
     `, [
-            id_facture,
-            data.id_produit,
-            data.quantite,
-            data.unite_vente,
-            data.prix_unitaire_ht,
-            data.prix_ttc,
-            data.taux_tva,
-            data.remise_ligne || 0,
-            data.description || null
-        ]);
+                id_facture,
+                data.id_produit,
+                data.quantite,
+                data.unite_vente,
+                data.prix_unitaire_ht,
+                data.prix_ttc,
+                data.taux_tva,
+                data.remise_ligne || 0,
+                data.description || null
+            ]);
 
-        return result.rows[0];
+            // 📝 Historique
+            await Historique.logLigneAjoutee(client, id_facture, result.rows[0], auteur);
+
+            await client.query('COMMIT');
+            return result.rows[0];
+
+        } catch (error) {
+            await client.query('ROLLBACK');
+            throw error;
+        } finally {
+            client.release();
+        }
     }
 
-    static async valider(id) {
+    static async valider(id, auteur = null) {
         const client = await pool.connect();
 
         try {
             await client.query('BEGIN');
 
             const factureCheck = await client.query(`
-            SELECT statut, type_facture FROM facture WHERE id_facture = $1
+            SELECT id_facture, numero_facture, statut, type_facture FROM facture WHERE id_facture = $1
         `, [id]);
 
             if (factureCheck.rows.length === 0) {
@@ -363,6 +436,9 @@ class Facture {
             WHERE id_facture = $1
             RETURNING *
         `, [id]);
+
+            // 📝 Historique
+            await Historique.logStatut(client, factureCheck.rows[0], 'Brouillon', 'Validée', auteur);
 
             await client.query('COMMIT');
             return this.getById(id);
@@ -483,6 +559,19 @@ class Facture {
                 VALUES ($1, $2)
             `, [id_bon, id_facture]);
             }
+
+            // 📝 Historique
+            const bonsResult = await client.query(
+                'SELECT numero_facture FROM facture WHERE id_facture = ANY($1)',
+                [data.id_bons_livraison]
+            );
+            const numeros = bonsResult.rows.map(b => b.numero_facture).join(', ');
+            await Historique.logCreation(
+                client,
+                factureResult.rows[0],
+                data.auteur,
+                `à partir des bons de livraison : ${numeros}`
+            );
 
             await client.query('COMMIT');
             return this.getById(id_facture);

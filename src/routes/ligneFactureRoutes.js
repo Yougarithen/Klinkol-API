@@ -2,6 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const controller = require('../controllers/ligneFactureController');
+const { authenticate } = require('../middleware/authMiddleware');
+
+// 🔒 Obligatoire : req.user doit exister pour enregistrer l'auteur dans l'historique
+router.use(authenticate);
 
 router.get('/', controller.getAll);
 router.get('/:id', controller.getById);
